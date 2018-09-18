@@ -14,17 +14,18 @@ if (isset($_POST['command'])) {
     $php = PHP_BINDIR ? PHP_BINDIR . '/php' : 'php';
     $valid = validateCommand($command);
     if ($valid) {
+        $output = [];
         exec(
             escapeCommand($php . ' -f ../../../../bin/magento ' . $command) . " $arguments" ." 2>&1",
             $output,
             $exitCode
         );
+        echo implode("\n", $output);
         if ($exitCode == 0) {
             http_response_code(202);
         } else {
             http_response_code(500);
         }
-        echo implode("\n", $output);
     } else {
         http_response_code(403);
         echo "Given command not found valid in Magento CLI Command list.";
