@@ -15,8 +15,10 @@ if (isset($_POST['command'])) {
     $valid = validateCommand($command);
     if ($valid) {
         $output = [];
+        $test = escapeCommand($php . ' -f ../../../../bin/magento ' . $command) . " $arguments" ." 2>&1";
+        echo $test;
         exec(
-            escapeCommand($php . ' -f ../../../../bin/magento ' . $command) . " $arguments" ." 2>&1",
+            $test,
             $output,
             $exitCode
         );
