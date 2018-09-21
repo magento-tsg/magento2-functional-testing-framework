@@ -220,29 +220,21 @@ class ModuleResolver
     private function aggregateTestModulePaths()
     {
         $allModulePaths = [];
-
-        // Define the Module paths from app/code
-        $appCodePath = MAGENTO_BP
-            . DIRECTORY_SEPARATOR
-            . 'app' . DIRECTORY_SEPARATOR
-            . 'code' . DIRECTORY_SEPARATOR;
-
+        // Define the Module paths from magento bp
+        $magentoBaseCodePath = MAGENTO_BP;
         // Define the Module paths from default TESTS_MODULE_PATH
         $modulePath = defined('TESTS_MODULE_PATH') ? TESTS_MODULE_PATH : TESTS_BP;
-
-        // Define the Module paths from vendor modules
-        $vendorCodePath = PROJECT_ROOT
-            . DIRECTORY_SEPARATOR
-            . 'vendor' . DIRECTORY_SEPARATOR;
-
+        $modulePath = rtrim($modulePath, DIRECTORY_SEPARATOR);
+        // Define the Module paths from project root
+        $projectRootCodePath = PROJECT_ROOT;
         $codePathsToPattern = [
             $modulePath => '',
-            $appCodePath => '/Test/Mftf',
-            $vendorCodePath => '/Test/Mftf'
+            $magentoBaseCodePath => 'Test' . DIRECTORY_SEPARATOR . 'Mftf',
+            $projectRootCodePath => 'Test' . DIRECTORY_SEPARATOR . 'Mftf'
         ];
 
         foreach ($codePathsToPattern as $codePath => $pattern) {
-            $allModulePaths = array_merge_recursive($allModulePaths, $this->globRelevantPaths($codePath, $pattern));
+            $allModulePaths = array_merge_recursive($allModulePaths, self::globRelevantPaths($codePath, $pattern));
         }
 
         return $allModulePaths;
@@ -261,17 +253,48 @@ class ModuleResolver
     {
         $modulePaths = [];
         $relevantPaths = [];
-
         if (file_exists($testPath)) {
-            $relevantPaths = glob($testPath . '*/*' . $pattern);
+            $relevantPaths = $this->globRelevantWrapper($testPath, $pattern);
         }
-
         foreach ($relevantPaths as $codePath) {
             $mainModName = basename(str_replace($pattern, '', $codePath));
+            if (strpos($mainModName, "module-") !== false) {
+                $mainModName = $this->formatVendorModuleName($mainModName);
+            }
             $modulePaths[$mainModName][] = $codePath;
         }
-
         return $modulePaths;
+    }
+    
+    /**
+     * Glob wrapper for globRelevantPaths function
+     *
+     * @param string $testPath
+     * @param string $pattern
+     * @return array
+     */
+    private static function globRelevantWrapper($testPath, $pattern)
+    {
+        if ($pattern == "") {
+            return glob($testPath . '*' . DIRECTORY_SEPARATOR . '*' . $pattern);
+        }
+        $subDirectory = "*" . DIRECTORY_SEPARATOR;
+        $directories = glob($testPath . $subDirectory . $pattern, GLOB_ONLYDIR);
+        foreach (glob($testPath . $subDirectory, GLOB_ONLYDIR) as $dir) {
+            $directories = array_merge_recursive($directories, self::globRelevantWrapper($dir, $pattern));
+        }
+        return $directories;
+    }
+
+    /**
+     * Formats vendor modules into Magento modules (module-admin-notification -> AdminNotification)
+     * @param string $name
+     * @return string
+     */
+    private function formatVendorModuleName($name)
+    {
+        $name = str_replace('module-', "", $name);
+        return implode("", array_map('ucfirst', explode("-", $name)));
     }
 
     /**
