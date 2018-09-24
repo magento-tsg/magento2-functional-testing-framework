@@ -225,6 +225,7 @@
                 <item name="/tests/test/(before|after)/(createData|updateData|getData)/requiredEntity" xsi:type="string">createDataKey</item>
                 <item name="/tests/test/(before|after)/(createData|updateData|getData)/field" xsi:type="string">key</item>
                 <item name="/tests/test/annotations(/group)+" xsi:type="string">value</item>
+                <item name="/tests/test/(before|after)/actionGroup/argument" xsi:type="string">name</item>
             </argument>
             <argument name="fileName" xsi:type="string">*.xml</argument>
             <argument name="defaultScope" xsi:type="string">Test</argument>
