@@ -7,6 +7,7 @@
 namespace Magento\FunctionalTestingFramework\Util;
 
 use Magento\FunctionalTestingFramework\Config\MftfApplicationConfig;
+use Magento\FunctionalTestingFramework\Exceptions\TestFrameworkException;
 
 /**
  * Class ModuleResolver, resolve module path based on enabled modules of target Magento instance.
@@ -24,6 +25,21 @@ class ModuleResolver
      * Environment field name for custom module paths.
      */
     const CUSTOM_MODULE_PATHS = 'CUSTOM_MODULE_PATHS';
+
+    /**
+     * List of path types present in Magento Component Registrar
+     */
+    const PATHS = ['module', 'library', 'theme', 'language'];
+
+    /**
+     * Magento Registrar Class
+     */
+    const REGISTRAR_CLASS = "\Magento\Framework\Component\ComponentRegistrar";
+
+    /**
+     * Magento Directory Structure Name Prefix
+     */
+    const MAGENTO_PREFIX = "Magento_";
 
     /**
      * Enabled modules.
@@ -188,26 +204,13 @@ class ModuleResolver
         if (isset($this->enabledModulePaths)) {
             return $this->enabledModulePaths;
         }
-
-        $enabledModules = $this->getEnabledModules();
-        if (empty($enabledModules) && !MftfApplicationConfig::getConfig()->forceGenerateEnabled()) {
-            trigger_error(
-                "Could not retrieve enabled modules from provided 'MAGENTO_BASE_URL'," .
-                "please make sure Magento is available at this url",
-                E_USER_ERROR
-            );
-        }
-
         $allModulePaths = $this->aggregateTestModulePaths();
-
-        if (empty($enabledModules)) {
+        if (MftfApplicationConfig::getConfig()->forceGenerateEnabled()) {
             $this->enabledModulePaths = $this->applyCustomModuleMethods($allModulePaths);
             return $this->enabledModulePaths;
         }
-
-        $enabledModules = array_merge($enabledModules, $this->getModuleWhitelist());
+        $enabledModules = array_merge($this->getEnabledModules(), $this->getModuleWhitelist());
         $enabledDirectoryPaths = $this->getEnabledDirectoryPaths($enabledModules, $allModulePaths);
-
         $this->enabledModulePaths = $this->applyCustomModuleMethods($enabledDirectoryPaths);
         return $this->enabledModulePaths;
     }
@@ -220,29 +223,21 @@ class ModuleResolver
     private function aggregateTestModulePaths()
     {
         $allModulePaths = [];
-
-        // Define the Module paths from app/code
-        $appCodePath = MAGENTO_BP
-            . DIRECTORY_SEPARATOR
-            . 'app' . DIRECTORY_SEPARATOR
-            . 'code' . DIRECTORY_SEPARATOR;
-
+        // Define the Module paths from magento bp
+        $magentoBaseCodePath = MAGENTO_BP;
         // Define the Module paths from default TESTS_MODULE_PATH
         $modulePath = defined('TESTS_MODULE_PATH') ? TESTS_MODULE_PATH : TESTS_BP;
-
-        // Define the Module paths from vendor modules
-        $vendorCodePath = PROJECT_ROOT
-            . DIRECTORY_SEPARATOR
-            . 'vendor' . DIRECTORY_SEPARATOR;
-
+        $modulePath = rtrim($modulePath, DIRECTORY_SEPARATOR);
+        // Define the Module paths from project root
+        $projectRootCodePath = PROJECT_ROOT;
         $codePathsToPattern = [
             $modulePath => '',
-            $appCodePath => '/Test/Mftf',
-            $vendorCodePath => '/Test/Mftf'
+            $magentoBaseCodePath => 'Test' . DIRECTORY_SEPARATOR . 'Mftf',
+            $projectRootCodePath => 'Test' . DIRECTORY_SEPARATOR . 'Mftf'
         ];
 
         foreach ($codePathsToPattern as $codePath => $pattern) {
-            $allModulePaths = array_merge_recursive($allModulePaths, $this->globRelevantPaths($codePath, $pattern));
+            $allModulePaths = array_merge_recursive($allModulePaths, self::globRelevantPaths($codePath, $pattern));
         }
 
         return $allModulePaths;
@@ -261,17 +256,37 @@ class ModuleResolver
     {
         $modulePaths = [];
         $relevantPaths = [];
-
         if (file_exists($testPath)) {
-            $relevantPaths = glob($testPath . '*/*' . $pattern);
+            $relevantPaths = $this->globRelevantWrapper($testPath, $pattern);
         }
+        $allComponents = $this->getRegisteredModuleList();
 
         foreach ($relevantPaths as $codePath) {
-            $mainModName = basename(str_replace($pattern, '', $codePath));
+            $mainModName = array_search($codePath, $allComponents) ?: basename(str_replace($pattern, '', $codePath));
+            $mainModName = str_replace(self::MAGENTO_PREFIX, "", $mainModName);
             $modulePaths[$mainModName][] = $codePath;
         }
-
         return $modulePaths;
+    }
+    
+    /**
+     * Glob wrapper for globRelevantPaths function
+     *
+     * @param string $testPath
+     * @param string $pattern
+     * @return array
+     */
+    private static function globRelevantWrapper($testPath, $pattern)
+    {
+        if ($pattern == "") {
+            return glob($testPath . '*' . DIRECTORY_SEPARATOR . '*' . $pattern);
+        }
+        $subDirectory = "*" . DIRECTORY_SEPARATOR;
+        $directories = glob($testPath . $subDirectory . $pattern, GLOB_ONLYDIR);
+        foreach (glob($testPath . $subDirectory, GLOB_ONLYDIR) as $dir) {
+            $directories = array_merge_recursive($directories, self::globRelevantWrapper($dir, $pattern));
+        }
+        return $directories;
     }
 
     /**
@@ -449,5 +464,37 @@ class ModuleResolver
     private function getModuleBlacklist()
     {
         return $this->moduleBlacklist;
+    }
+
+    /**
+     * Calls Magento method for determining registered modules.
+     *
+     * @return string[]
+     * @throws TestFrameworkException
+     */
+    private function getRegisteredModuleList()
+    {
+        $autoloadPath = realpath(MAGENTO_BP . "/app/autoload.php");
+        if ($autoloadPath) {
+            require_once($autoloadPath);
+        } else {
+            return [];
+        }
+        try {
+            $allComponents = [];
+            if (!class_exists(self::REGISTRAR_CLASS)) {
+                throw new TestFrameworkException("Magento Installation not found when loading registered modules.\n");
+            }
+            $components = new \Magento\Framework\Component\ComponentRegistrar();
+            foreach (self::PATHS as $componentType) {
+                $allComponents = array_merge($allComponents, $components->getPaths($componentType));
+            }
+            array_walk($allComponents, function (&$value) {
+                $value .= DIRECTORY_SEPARATOR . 'Test' . DIRECTORY_SEPARATOR . 'Mftf';
+            });
+            return $allComponents;
+        } catch (TestFrameworkException $e) {
+        }
+        return [];
     }
 }
