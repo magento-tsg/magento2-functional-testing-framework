@@ -478,8 +478,7 @@ class ModuleResolver
         if ($autoloadPath) {
             require_once($autoloadPath);
         } else {
-            throw new TestFrameworkException("Magento app/autoload.php not found with given MAGENTO_BP:"
-                . MAGENTO_BP);
+            return [];
         }
         try {
             $allComponents = [];
