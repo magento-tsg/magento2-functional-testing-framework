@@ -7,6 +7,7 @@
 namespace Magento\FunctionalTestingFramework\Util;
 
 use Magento\FunctionalTestingFramework\Config\MftfApplicationConfig;
+use Magento\FunctionalTestingFramework\Exceptions\TestFrameworkException;
 
 /**
  * Class ModuleResolver, resolve module path based on enabled modules of target Magento instance.
@@ -24,6 +25,21 @@ class ModuleResolver
      * Environment field name for custom module paths.
      */
     const CUSTOM_MODULE_PATHS = 'CUSTOM_MODULE_PATHS';
+
+    /**
+     * List of path types present in Magento Component Registrar
+     */
+    const PATHS = ['module', 'library', 'theme', 'language'];
+
+    /**
+     * Magento Registrar Class
+     */
+    const REGISTRAR_CLASS = "\Magento\Framework\Component\ComponentRegistrar";
+
+    /**
+     * Magento Directory Structure Name Prefix
+     */
+    const MAGENTO_PREFIX = "Magento_";
 
     /**
      * Enabled modules.
@@ -188,26 +204,13 @@ class ModuleResolver
         if (isset($this->enabledModulePaths)) {
             return $this->enabledModulePaths;
         }
-
-        $enabledModules = $this->getEnabledModules();
-        if (empty($enabledModules) && !MftfApplicationConfig::getConfig()->forceGenerateEnabled()) {
-            trigger_error(
-                "Could not retrieve enabled modules from provided 'MAGENTO_BASE_URL'," .
-                "please make sure Magento is available at this url",
-                E_USER_ERROR
-            );
-        }
-
         $allModulePaths = $this->aggregateTestModulePaths();
-
-        if (empty($enabledModules)) {
+        if (MftfApplicationConfig::getConfig()->forceGenerateEnabled()) {
             $this->enabledModulePaths = $this->applyCustomModuleMethods($allModulePaths);
             return $this->enabledModulePaths;
         }
-
-        $enabledModules = array_merge($enabledModules, $this->getModuleWhitelist());
+        $enabledModules = array_merge($this->getEnabledModules(), $this->getModuleWhitelist());
         $enabledDirectoryPaths = $this->getEnabledDirectoryPaths($enabledModules, $allModulePaths);
-
         $this->enabledModulePaths = $this->applyCustomModuleMethods($enabledDirectoryPaths);
         return $this->enabledModulePaths;
     }
@@ -256,11 +259,11 @@ class ModuleResolver
         if (file_exists($testPath)) {
             $relevantPaths = $this->globRelevantWrapper($testPath, $pattern);
         }
+        $allComponents = $this->getRegisteredModuleList();
+
         foreach ($relevantPaths as $codePath) {
-            $mainModName = basename(str_replace($pattern, '', $codePath));
-            if (strpos($mainModName, "module-") !== false) {
-                $mainModName = $this->formatVendorModuleName($mainModName);
-            }
+            $mainModName = array_search($codePath, $allComponents) ?: basename(str_replace($pattern, '', $codePath));
+            $mainModName = str_replace(self::MAGENTO_PREFIX, "", $mainModName);
             $modulePaths[$mainModName][] = $codePath;
         }
         return $modulePaths;
@@ -284,17 +287,6 @@ class ModuleResolver
             $directories = array_merge_recursive($directories, self::globRelevantWrapper($dir, $pattern));
         }
         return $directories;
-    }
-
-    /**
-     * Formats vendor modules into Magento modules (module-admin-notification -> AdminNotification)
-     * @param string $name
-     * @return string
-     */
-    private function formatVendorModuleName($name)
-    {
-        $name = str_replace('module-', "", $name);
-        return implode("", array_map('ucfirst', explode("-", $name)));
     }
 
     /**
@@ -472,5 +464,40 @@ class ModuleResolver
     private function getModuleBlacklist()
     {
         return $this->moduleBlacklist;
+    }
+
+    /**
+     * Calls Magento method for determining registered modules.
+     *
+     * @return string[]
+     * @throws TestFrameworkException
+     */
+    private function getRegisteredModuleList()
+    {
+        if (array_key_exists('MAGENTO_BP', $_ENV)) {
+            $autoloadPath = realpath(MAGENTO_BP . "/app/autoload.php");
+            if ($autoloadPath) {
+                require_once($autoloadPath);
+            } else {
+                throw new TestFrameworkException("Magento app/autoload.php not found with given MAGENTO_BP:"
+                    . MAGENTO_BP);
+            }
+        }
+        try {
+            $allComponents = [];
+            if (!class_exists(self::REGISTRAR_CLASS)) {
+                throw new TestFrameworkException("Magento Installation not found when loading registered modules.\n");
+            }
+            $components = new \Magento\Framework\Component\ComponentRegistrar();
+            foreach (self::PATHS as $componentType) {
+                $allComponents = array_merge($allComponents, $components->getPaths($componentType));
+            }
+            array_walk($allComponents, function (&$value) {
+                $value .= DIRECTORY_SEPARATOR . 'Test' . DIRECTORY_SEPARATOR . 'Mftf';
+            });
+            return $allComponents;
+        } catch (TestFrameworkException $e) {
+        }
+        return [];
     }
 }
