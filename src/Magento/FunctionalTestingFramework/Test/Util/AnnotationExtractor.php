@@ -63,6 +63,7 @@ class AnnotationExtractor extends BaseObjectExtractor
     {
         $annotationObjects = [];
         $annotations = $this->stripDescriptorTags($testAnnotations, self::NODE_NAME);
+        $excludedGroups = array_map('trim', explode(',', getenv('GROUPS_TO_EXCLUDE')));
 
         // parse the Test annotations
 
@@ -95,10 +96,14 @@ class AnnotationExtractor extends BaseObjectExtractor
             $annotationObjects[$annotationKey] = $annotationValues;
         }
 
-        $this->addTestCaseIdToTitle($annotationObjects, $filename);
-        $this->validateMissingAnnotations($annotationObjects, $filename);
-        $this->addStoryTitleToMap($annotationObjects, $filename);
+        $groups = $annotationObjects['group'] ?? [];
+        $isExcluded = !empty($groups) && array_intersect($excludedGroups, $groups);
 
+        if(!$isExcluded) {
+            $this->addTestCaseIdToTitle($annotationObjects, $filename);
+            $this->validateMissingAnnotations($annotationObjects, $filename);
+            $this->addStoryTitleToMap($annotationObjects, $filename);
+        }
         return $annotationObjects;
     }
 

@@ -147,6 +147,13 @@ class TestObjectHandler implements ObjectHandlerInterface
             } catch (XmlException $exception) {
                 $exceptionCollector->addError(self::class, $exception->getMessage());
             }
+
+            $excludedGroups = array_map('trim', explode(',', getenv('GROUPS_TO_EXCLUDE')));
+            $groups = $this->tests[$testName]->getAnnotations()['group'] ?? [];
+
+            if (!empty($groups) && !empty(array_intersect($excludedGroups, $groups))) {
+                unset($this->tests[$testName]);
+            }
         }
         $exceptionCollector->throwException();
         
