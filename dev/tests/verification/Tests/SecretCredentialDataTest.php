@@ -46,7 +46,7 @@ class SecretCredentialDataTestCest
         );
 
         $createProductWithFieldOverridesUsingSecretCredData1Fields['qty'] =
-            $I->getSecret("payment_authorizenet_trans_key");
+            $I->getSecret("payment_method_trans_key");
 
         $createProductWithFieldOverridesUsingSecretCredData1Fields['price'] =
             $I->getSecret("carriers_dhl_account_eu");
@@ -68,7 +68,7 @@ class SecretCredentialDataTestCest
         $I->comment($magentoCliUsingHardcodedData1);
 
         $magentoCliUsingSecretCredData1 = $I->magentoCLI("config:set cms/wysiwyg/enabled " .
-            $I->getSecret("payment_authorizenet_login"));
+            $I->getSecret("payment_method_login"));
             // stepKey: magentoCliUsingSecretCredData1
         $I->comment($magentoCliUsingSecretCredData1);
     }
